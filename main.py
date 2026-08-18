@@ -14,14 +14,13 @@ import platform
 import shutil
 import socket
 import subprocess
-import threading
 import time
-import tkinter as tk
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, asdict
-from tkinter import scrolledtext, ttk
 from typing import Callable
+
+import streamlit as st
 
 
 APP_NAME = "System Doctor"
@@ -316,136 +315,70 @@ def answer_question(question: str, snapshot: Snapshot | None, findings: list[Fin
     return f"Diagnóstico actual: CPU {snapshot.cpu_usage}%, RAM {snapshot.memory_usage}% y disco libre {snapshot.disk_free_percent}%.\n\nHallazgos:\n{context}\n\nDescribe el síntoma con detalle (por ejemplo, «el equipo se congela al abrir Chrome») para una orientación más específica."
 
 
-class SystemDoctorApp(tk.Tk):
-    def __init__(self) -> None:
-        super().__init__()
-        self.title(APP_NAME)
-        self.geometry("920x690")
-        self.minsize(760, 560)
-        self.snapshot: Snapshot | None = None
-        self.findings: list[Finding] = []
-        self.latest_llm_report = ""
-        self.status = tk.StringVar(value="Listo para analizar el dispositivo.")
-        self._build_ui()
+def render_app() -> None:
+    """Render the System Doctor page through Streamlit."""
+    st.set_page_config(page_title=APP_NAME, page_icon="🩺", layout="wide")
+    st.title("🩺 System Doctor")
+    st.caption("Medición local y diagnóstico priorizado por IA para actuar con seguridad.")
 
-    def _build_ui(self) -> None:
-        style = ttk.Style(self)
-        style.configure("Title.TLabel", font=("Segoe UI", 18, "bold"))
-        style.configure("Subtitle.TLabel", foreground="#4b5563")
-        container = ttk.Frame(self, padding=18)
-        container.pack(fill="both", expand=True)
-        ttk.Label(container, text="System Doctor", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(container, text="Medición local y diagnóstico priorizado por IA para actuar con seguridad.", style="Subtitle.TLabel").pack(anchor="w", pady=(0, 12))
-        controls = ttk.Frame(container)
-        controls.pack(fill="x", pady=(0, 10))
-        self.scan_button = ttk.Button(controls, text="Analizar dispositivo", command=self.start_scan)
-        self.scan_button.pack(side="left")
-        ttk.Button(controls, text="Guardar informe", command=self.save_report).pack(side="left", padx=8)
-        ttk.Label(controls, textvariable=self.status).pack(side="left", padx=12)
-        self.report = scrolledtext.ScrolledText(container, wrap="word", height=23, font=("Consolas", 10))
-        self.report.pack(fill="both", expand=True)
-        self.report.insert("1.0", "Pulsa «Analizar dispositivo» para obtener el diagnóstico.\n")
-        self.report.configure(state="disabled")
-        assistant = ttk.LabelFrame(container, text="Diagnóstico con IA", padding=10)
-        assistant.pack(fill="x", pady=(12, 0))
-        self.question = ttk.Entry(assistant)
-        self.question.pack(side="left", fill="x", expand=True)
-        self.question.insert(0, "Describe el problema: por ejemplo, el equipo se congela al abrir Chrome.")
-        self.question.bind("<Return>", lambda _event: self.generate_diagnosis())
-        self.diagnosis_button = ttk.Button(assistant, text="Generar diagnóstico", command=self.generate_diagnosis)
-        self.diagnosis_button.pack(side="left", padx=(8, 0))
-        ttk.Label(
-            container,
-            text="La descripción y las métricas del análisis se envían al modelo configurado para elaborar el informe.",
-            style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(5, 0))
+    for key, default in (("snapshot", None), ("findings", []), ("llm_diagnosis", "")):
+        if key not in st.session_state:
+            st.session_state[key] = default
 
-    def set_report(self, text: str) -> None:
-        self.report.configure(state="normal")
-        self.report.delete("1.0", "end")
-        self.report.insert("1.0", text)
-        self.report.configure(state="disabled")
+    left, right = st.columns([1, 2])
+    with left:
+        if st.button("Analizar dispositivo", type="primary", use_container_width=True):
+            try:
+                with st.spinner("Analizando el dispositivo..."):
+                    snapshot = collect_snapshot()
+                    st.session_state.snapshot = snapshot
+                    st.session_state.findings = diagnose(snapshot)
+                st.success("Análisis completado.")
+            except Exception as error:
+                st.error(f"No se pudo completar el análisis: {error}")
 
-    def start_scan(self) -> None:
-        self.scan_button.configure(state="disabled")
-        self.status.set("Iniciando análisis...")
-        threading.Thread(target=self._scan_worker, daemon=True).start()
+    with right:
+        problem = st.text_area(
+            "Problema observado",
+            placeholder="Ej.: El equipo se congela al abrir Chrome y el ventilador hace mucho ruido.",
+            height=90,
+        )
+        if st.button("Generar diagnóstico con IA", use_container_width=True):
+            if not problem.strip():
+                st.warning("Describe el problema antes de generar el diagnóstico.")
+            else:
+                try:
+                    with st.spinner("Generando informe de diagnóstico..."):
+                        st.session_state.llm_diagnosis = generate_llm_diagnosis(
+                            problem, st.session_state.snapshot, st.session_state.findings
+                        )
+                    st.success("Diagnóstico generado.")
+                except Exception as error:
+                    st.error(str(error))
 
-    def _scan_worker(self) -> None:
-        try:
-            snapshot = collect_snapshot(lambda message: self.after(0, self.status.set, message))
-            findings = diagnose(snapshot)
-            report = format_report(snapshot, findings)
-            self.after(0, self._finish_scan, snapshot, findings, report)
-        except Exception as error:
-            self.after(0, self._scan_error, str(error))
+    if st.session_state.snapshot:
+        st.subheader("Medición local")
+        st.code(format_report(st.session_state.snapshot, st.session_state.findings), language=None)
+        export = {
+            "snapshot": asdict(st.session_state.snapshot),
+            "findings": [asdict(item) for item in st.session_state.findings],
+            "llm_diagnosis": st.session_state.llm_diagnosis or None,
+        }
+        st.download_button(
+            "Descargar informe JSON",
+            data=json.dumps(export, ensure_ascii=False, indent=2),
+            file_name=f"system_doctor_{time.strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
+        )
 
-    def _finish_scan(self, snapshot: Snapshot, findings: list[Finding], report: str) -> None:
-        self.snapshot, self.findings = snapshot, findings
-        self.set_report(report)
-        self.status.set("Análisis completado.")
-        self.scan_button.configure(state="normal")
+    if st.session_state.llm_diagnosis:
+        st.subheader("Informe de diagnóstico con IA")
+        st.markdown(st.session_state.llm_diagnosis)
 
-    def _scan_error(self, error: str) -> None:
-        self.status.set("No se pudo completar el análisis.")
-        self.scan_button.configure(state="normal")
-        self.set_report(f"Error durante el análisis: {error}")
-
-    def generate_diagnosis(self) -> None:
-        problem = self.question.get().strip()
-        if not problem or problem.startswith("Describe el problema:"):
-            self.status.set("Describe el problema antes de generar el diagnóstico.")
-            self.question.focus_set()
-            return
-        self.diagnosis_button.configure(state="disabled")
-        self.status.set("Generando informe de diagnóstico con IA...")
-        threading.Thread(target=self._diagnosis_worker, args=(problem,), daemon=True).start()
-
-    def _diagnosis_worker(self, problem: str) -> None:
-        try:
-            response = generate_llm_diagnosis(problem, self.snapshot, self.findings)
-            self.after(0, self._finish_diagnosis, response)
-        except Exception as error:
-            self.after(0, self._diagnosis_error, str(error))
-
-    def _finish_diagnosis(self, response: str) -> None:
-        self.latest_llm_report = response
-        self.report.configure(state="normal")
-        self.report.insert("end", f"\n\nINFORME DE DIAGNÓSTICO CON IA\n{'=' * 58}\n{response}\n")
-        self.report.see("end")
-        self.report.configure(state="disabled")
-        self.status.set("Diagnóstico con IA generado.")
-        self.diagnosis_button.configure(state="normal")
-
-    def _diagnosis_error(self, error: str) -> None:
-        self.status.set("No se pudo generar el diagnóstico con IA.")
-        self.diagnosis_button.configure(state="normal")
-        self.report.configure(state="normal")
-        self.report.insert("end", f"\n\nDIAGNÓSTICO CON IA\n{'-' * 58}\n{error}\n")
-        self.report.see("end")
-        self.report.configure(state="disabled")
-
-    def save_report(self) -> None:
-        if not self.snapshot:
-            self.status.set("Primero ejecuta un análisis para guardar el informe.")
-            return
-        filename = f"system_doctor_{time.strftime('%Y%m%d_%H%M%S')}.json"
-        try:
-            with open(filename, "w", encoding="utf-8") as file:
-                json.dump(
-                    {
-                        "snapshot": asdict(self.snapshot),
-                        "findings": [asdict(item) for item in self.findings],
-                        "llm_diagnosis": self.latest_llm_report or None,
-                    },
-                    file,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            self.status.set(f"Informe guardado: {filename}")
-        except OSError as error:
-            self.status.set(f"No se pudo guardar el informe: {error}")
+    st.caption(
+        "La descripción del problema y las métricas obtenidas se envían al modelo configurado "
+        "para elaborar el informe."
+    )
 
 
-if __name__ == "__main__":
-    SystemDoctorApp().mainloop()
+render_app()
