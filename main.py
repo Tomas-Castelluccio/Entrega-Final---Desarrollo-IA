@@ -319,11 +319,27 @@ def render_app() -> None:
     """Render the System Doctor page through Streamlit."""
     st.set_page_config(page_title=APP_NAME, page_icon="🩺", layout="wide")
     st.title("🩺 System Doctor")
-    st.caption("Medición local y diagnóstico priorizado por IA para actuar con seguridad.")
+    st.write(
+        "System Doctor te ayuda a entender problemas de rendimiento o funcionamiento de tu PC. "
+        "Combina una medición local de recursos con tu descripción del síntoma para generar un "
+        "informe de diagnóstico ordenado, seguro y accionable."
+    )
 
     for key, default in (("snapshot", None), ("findings", []), ("llm_diagnosis", "")):
         if key not in st.session_state:
             st.session_state[key] = default
+
+    with st.expander("Cómo usar esta página", expanded=True):
+        st.markdown(
+            """1. Pulsa **Analizar dispositivo** para obtener una medición local de CPU, memoria,
+            disco y tiempo de actividad. Esta acción solo lee información: no cambia configuraciones.
+            2. Escribe el síntoma que observas en **Problema observado**; incluye cuándo ocurre y qué
+            aplicación o acción lo desencadena.
+            3. Pulsa **Generar diagnóstico con IA**. Recibirás un informe con evidencia, prioridades
+            P0/P1/P2 y los pasos recomendados en orden.
+            4. Si lo necesitas, usa **Descargar informe JSON** para guardar la medición y el diagnóstico
+            y compartirlos con soporte técnico."""
+        )
 
     left, right = st.columns([1, 2])
     with left:
