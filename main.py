@@ -331,14 +331,19 @@ def render_app() -> None:
 
     with st.expander("Cómo usar esta página", expanded=True):
         st.markdown(
-            """1. Pulsa **Analizar dispositivo** para obtener una medición local de CPU, memoria,
-            disco y tiempo de actividad. Esta acción solo lee información: no cambia configuraciones.
-            2. Escribe el síntoma que observas en **Problema observado**; incluye cuándo ocurre y qué
-            aplicación o acción lo desencadena.
-            3. Pulsa **Generar diagnóstico con IA**. Recibirás un informe con evidencia, prioridades
-            P0/P1/P2 y los pasos recomendados en orden.
-            4. Si lo necesitas, usa **Descargar informe JSON** para guardar la medición y el diagnóstico
-            y compartirlos con soporte técnico."""
+            """**Sigue estos pasos para obtener un diagnóstico útil:**
+
+1. **Analiza tu equipo**  
+   Pulsa **Analizar dispositivo** para medir CPU, memoria, disco y tiempo de actividad. Esta acción solo lee información; no cambia configuraciones.
+
+2. **Describe el problema**  
+   En **Problema observado**, explica qué ocurre, cuándo sucede y qué aplicación o acción lo desencadena.
+
+3. **Genera el diagnóstico**  
+   Pulsa **Generar diagnóstico con IA** para recibir evidencia, prioridades P0/P1/P2 y los pasos recomendados en orden.
+
+4. **Guarda el informe (opcional)**  
+   Usa **Descargar informe JSON** para conservar la medición y el diagnóstico, o compartirlos con soporte técnico."""
         )
 
     left, right = st.columns([1, 2])
